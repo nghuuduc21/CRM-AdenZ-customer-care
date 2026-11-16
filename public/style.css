@@ -15,7 +15,7 @@ p.hint, .hint { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
 /* khung */
 .top { position: relative; display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: #fff; border-bottom: 3px solid var(--brand); }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand img { height: 28px; width: auto; display: block; }
+.brand img { height: 36px; width: auto; max-width: 118px; object-fit: contain; display: block; }
 .brand .care { padding-left: 12px; border-left: 1px solid var(--line); color: var(--brand-ink); font-weight: 700; font-size: 18px; }
 .top .who { margin-left: auto; font-size: 13px; color: var(--muted); }
 .layout { display: flex; min-height: calc(100vh - 52px); }

@@ -62,7 +62,7 @@ const seg = (k) => (k ? `<span class="seg ${esc(k)}">${esc(S.status?.segments[k]
 // ---------- đăng nhập ----------
 function authView() {
   const setup = S.needsSetup;
-  $('#app').innerHTML = `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:10px"><span class="brand-mark">C</span><span class="care">Care Lab</span></div>
+  $('#app').innerHTML = `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:10px"><img src="logo.png" alt="AdenZ Travel"><span class="care">AdenZ Travel</span></div>
 <p class="hint">${setup ? 'Lần đầu sử dụng: tạo tài khoản quản trị (chỉ làm được trên máy chạy hệ thống).' : 'Chăm sóc khách hàng · Đăng nhập'}</p>
 <form id="f">${setup ? '<label class="f"><span>Họ tên</span><input type="text" name="name" required></label>' : ''}
 <label class="f"><span>Tên đăng nhập</span><input type="text" name="username" autocomplete="username" required></label>
@@ -107,7 +107,7 @@ async function render() {
   S.status = await api('GET', '/api/status');
   const TABS = tabsFor(S.user.role);
   if (!TABS.some(([k]) => k === S.tab) && !(HIDDEN_TABS.includes(S.tab) && S.user.role !== 'sale')) S.tab = TABS[0][0];
-  $('#app').innerHTML = `<header class="top"><span class="brand"><span class="brand-mark">C</span><span class="care">Care Lab</span>${S.status.demo ? '<span class="pill ok">DEMO</span>' : ''}</span><span class="who">${esc(S.user.name)} · ${esc(ROLE[S.user.role] || S.user.role)}</span><button id="out">Đăng xuất</button></header>
+  $('#app').innerHTML = `<header class="top"><span class="brand"><img src="logo.png" alt="AdenZ Travel"><span class="care">AdenZ Travel</span>${S.status.demo ? '<span class="pill ok">DEMO</span>' : ''}</span><span class="who">${esc(S.user.name)} · ${esc(ROLE[S.user.role] || S.user.role)}</span><button id="out">Đăng xuất</button></header>
 <div class="layout"><nav class="side">${TABS.map(([k, v]) => `<button data-tab="${k}" class="${k === S.tab ? 'active' : ''}">${v}</button>`).join('')}</nav><main id="main"><p class="loading">Đang tải…</p></main></div>`;
   $('#out').onclick = async () => {
     await api('POST', '/api/logout');
