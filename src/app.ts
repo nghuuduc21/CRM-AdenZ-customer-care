@@ -1,49 +1,186 @@
 import express, { type Express } from 'express';
 import type { Pool } from 'pg';
-import { createRecordsRouter } from './routes/records.js';
+import { resolve } from 'node:path';
+import { createAuthRouter, createUsersRouter, requireCareUser } from './modules/auth/auth.routes.js';
+import { loadApplicationKey } from './shared/security/key-store.js';
+import { createCustomerRouter } from './modules/customers/customer.routes.js';
+import { createDashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { createCareTaskRouter } from './modules/care-tasks/care-task.routes.js';
+import { createSettingsRouter } from './modules/settings/settings.routes.js';
+import { createCatalogRouter } from './modules/catalog/catalog.routes.js';
+import { createJourneyRouter } from './modules/journeys/journey.routes.js';
+import { createCampaignRouter } from './modules/campaigns/campaign.routes.js';
+import { createScoringRouter } from './modules/scoring/scoring.routes.js';
+import { seedDemo } from './scripts/demo-seed.service.js';
 
-export function createApp(pool: Pool): Express {
+export async function createApp(database: Pool): Promise<Express> {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
+  app.use(express.static(resolve(process.cwd(), 'public')));
 
-  app.get('/', (_request, response) => {
-    response.type('html').send(`<!doctype html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Team Project Starter</title>
-          <style>
-            body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;color:#172033}
-            code{background:#f1f4f8;padding:3px 6px;border-radius:4px}li{margin:10px 0}
-          </style>
-        </head>
-        <body>
-          <h1>Team Project Starter</h1>
-          <p>The development server is running. Start shaping this project to fit your team's idea.</p>
-          <h2>Available endpoints</h2>
-          <ul>
-            <li><a href="/health"><code>GET /health</code></a> — check the PostgreSQL connection.</li>
-            <li><a href="/api/records"><code>GET /api/records</code></a> — list sample records.</li>
-            <li><code>POST /api/records</code> — create a record with JSON <code>{"title":"...","description":"..."}</code>.</li>
-            <li><code>PATCH /api/records/:id</code> — change status to <code>open</code>, <code>in_progress</code>, or <code>done</code>.</li>
-            <li><code>DELETE /api/records/:id</code> — remove a record.</li>
-          </ul>
-          <p>This is a small API landing page. Your team can replace it with any interface or design.</p>
-        </body>
-      </html>`);
+  const careDataDirectory = resolve(process.cwd(), process.env.CARE_DATA_DIR || 'data/care');
+  const applicationKey = await loadApplicationKey(careDataDirectory, process.env.CARE_SECRET_KEY);
+  const { router: authRouter, auth } = createAuthRouter(
+    database,
+    applicationKey,
+    process.env.CARE_COOKIE_SECURE === 'true',
+  );
+  app.use('/api', authRouter);
+  app.use('/api', requireCareUser(auth));
+  app.use('/api', createUsersRouter(database,auth));
+  app.use('/api', createSettingsRouter(database,applicationKey));
+  app.use('/api', createDashboardRouter(database));
+  app.use('/api', createCustomerRouter(database));
+  app.use('/api', createCareTaskRouter(database));
+  app.use('/api', createCatalogRouter(database));
+  app.use('/api', createJourneyRouter(database));
+  app.use('/api', createCampaignRouter(database));
+  app.use('/api', createScoringRouter(database));
+
+  app.post('/api/sync', async (request, response) => {
+    const user = response.locals.user;
+    if (!user || !['admin', 'boss', 'marketing'].includes(user.role)) {
+      response.status(403).json({ error: 'Vai trò hiện tại không được nạp lại dữ liệu demo.' });
+      return;
+    }
+    try {
+      const counts = await seedDemo();
+      response.json({ counts, simulated: true, note: 'Đã nạp lại dữ liệu tổng hợp. Không kết nối CRM bên ngoài.' });
+    } catch {
+      response.status(500).json({ error: 'Không thể nạp lại dữ liệu demo.' });
+    }
   });
 
   app.get('/health', async (_request, response) => {
     try {
-      await pool.query('SELECT 1');
+      await database.query('SELECT 1');
       response.json({ status: 'ok', database: 'connected' });
     } catch {
       response.status(503).json({ status: 'error', database: 'unavailable' });
     }
   });
 
-  app.use('/api/records', createRecordsRouter(pool));
+  const demoQueries: Record<string, string> = {
+    customers: 'SELECT customer_id, code, name, sub_group, customer_type, customer_status, member_tier, source_name, sale_name, demo_scenario FROM customers WHERE is_demo=true ORDER BY customer_id',
+    products: 'SELECT id, name, product_type, destination, duration, price, active FROM products WHERE is_demo=true ORDER BY id',
+    orders: 'SELECT id, code, customer_id, status_title, payment_state, order_at, departure, return_date, total_amount, paid_amount, remaining_amount, trip_name, destination, sale_name FROM orders WHERE is_demo=true ORDER BY order_at DESC',
+    receipts: 'SELECT id, code, transaction_type, total_amount_source, payment_date, approve_status, payment_method, order_id, customer_id FROM receipts WHERE is_demo=true ORDER BY payment_date DESC NULLS LAST',
+    order_services: 'SELECT id, order_id, service_type, item_name, description, departure, return_date FROM order_services WHERE is_demo=true ORDER BY order_id',
+    leads: 'SELECT id, code, customer_id, status_title, source_name, service, quote_status, created_at, sale_name, demo_scenario FROM leads WHERE is_demo=true ORDER BY created_at DESC',
+    activities: 'SELECT id, customer_id, order_id, activity_type, title, created_at, remind_at, status, sale_name FROM activities WHERE is_demo=true ORDER BY created_at DESC',
+    passengers: 'SELECT id, order_id, customer_id, name, nationality, is_leader FROM passengers WHERE is_demo=true ORDER BY order_id, id',
+    tasks: 'SELECT id, customer_id, order_id, lead_id, task_kind, priority, title, detail, due_at, status, created_at, completed_at FROM care_tasks WHERE is_demo=true ORDER BY due_at',
+    surveys: 'SELECT id, customer_id, order_id, score, comment, sent_at, answered_at FROM surveys WHERE is_demo=true ORDER BY sent_at DESC',
+    campaigns: 'SELECT id, name, goal, status, subject, created_at, scheduled_at, sent_at FROM campaigns WHERE is_demo=true ORDER BY id',
+    messages: 'SELECT id, campaign_id, customer_id, journey, subject, to_addr, marketing, status, created_at, sent_at, opened_at, clicked_at FROM messages WHERE is_demo=true ORDER BY created_at DESC',
+    insights: `SELECT i.customer_id,c.code,c.name,i.customer_kind,i.r_score,i.f_score,i.m_score,i.potential_score,
+      i.potential_tier,i.segment_code,i.score_reasons,i.predicted_purchase,i.predicted_purchase_score,
+      i.suggested_destination,i.preferred_travel_month,i.churn_risk,i.prediction_method
+      FROM customer_insights i JOIN customers c ON c.customer_id=i.customer_id
+      WHERE i.is_demo=true ORDER BY i.segment_code,c.code`,
+  };
+
+  app.get('/api/demo/summary', async (_request, response) => {
+    try {
+      const counts = await Promise.all(Object.entries(demoQueries).map(async ([resource, sql]) => {
+        const table = resource === 'tasks' ? 'care_tasks' : resource === 'insights' ? 'customer_insights' : resource;
+        const result = await database.query<{ count: string }>(`SELECT count(*)::text AS count FROM ${table} WHERE is_demo=true`);
+        return [resource, Number(result.rows[0]?.count ?? 0)] as const;
+      }));
+      const insightCounts = await database.query(`
+        SELECT count(*) FILTER (WHERE customer_kind='buyer')::int AS purchased_customers,
+          count(*) FILTER (WHERE customer_kind='prospect')::int AS interacted_customers,
+          count(*) FILTER (WHERE predicted_purchase='high')::int AS high_purchase_probability,
+          count(*) FILTER (WHERE potential_tier='hot')::int AS hot_prospects,
+          count(*) FILTER (WHERE churn_risk='high')::int AS high_churn_risk
+        FROM customer_insights WHERE is_demo=true
+      `);
+      const preferenceCount = await database.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM customer_contact_preferences WHERE is_demo=true AND email_marketing_allowed=false',
+      );
+      const openTasks = await database.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM care_tasks WHERE is_demo=true AND status='open'",
+      );
+      response.json({ data: {
+        ...Object.fromEntries(counts),
+        ...insightCounts.rows[0],
+        unsubscribed_customers: preferenceCount.rows[0]?.count ?? 0,
+        open_tasks: openTasks.rows[0]?.count ?? 0,
+      } });
+    } catch {
+      response.status(500).json({ error: 'Không thể đọc thống kê demo. Hãy chạy migrations và seed:demo.' });
+    }
+  });
+
+  app.get('/api/demo/customers/:id', async (request, response) => {
+    const customerId = Number(request.params.id);
+    if (!Number.isSafeInteger(customerId) || customerId <= 0) {
+      response.status(400).json({ error: 'Mã khách hàng không hợp lệ.' });
+      return;
+    }
+    try {
+      const customer = await database.query(
+        'SELECT * FROM customers WHERE customer_id=$1 AND is_demo=true', [customerId],
+      );
+      if (!customer.rowCount) {
+        response.status(404).json({ error: 'Không tìm thấy khách hàng demo.' });
+        return;
+      }
+      const [insight, preferences, orders, leads, activities, tasks, passengers] = await Promise.all([
+        database.query('SELECT * FROM customer_insights WHERE customer_id=$1 AND is_demo=true', [customerId]),
+        database.query('SELECT * FROM customer_contact_preferences WHERE customer_id=$1 AND is_demo=true', [customerId]),
+        database.query('SELECT id,code,status_title,order_at,departure,return_date,total_amount,paid_amount,trip_name,destination FROM orders WHERE customer_id=$1 AND is_demo=true ORDER BY order_at DESC', [customerId]),
+        database.query('SELECT id,code,status_title,source_name,service,quote_status,created_at FROM leads WHERE customer_id=$1 AND is_demo=true ORDER BY created_at DESC', [customerId]),
+        database.query('SELECT id,activity_type,title,created_at,remind_at,status FROM activities WHERE customer_id=$1 AND is_demo=true ORDER BY created_at DESC LIMIT 12', [customerId]),
+        database.query('SELECT id,task_kind,priority,title,detail,due_at,status FROM care_tasks WHERE customer_id=$1 AND is_demo=true ORDER BY due_at', [customerId]),
+        database.query('SELECT p.id,p.order_id,p.name,p.nationality,p.is_leader FROM passengers p WHERE p.customer_id=$1 AND p.is_demo=true ORDER BY p.id', [customerId]),
+      ]);
+      response.json({ data: {
+        customer: customer.rows[0], insight: insight.rows[0] ?? null,
+        contact_preferences: preferences.rows[0] ?? null, orders: orders.rows,
+        leads: leads.rows, activities: activities.rows, tasks: tasks.rows, passengers: passengers.rows,
+      } });
+    } catch {
+      response.status(500).json({ error: 'Không thể đọc hồ sơ khách hàng demo.' });
+    }
+  });
+
+  app.patch('/api/demo/tasks/:id/complete', async (request, response) => {
+    const taskId = Number(request.params.id);
+    if (!Number.isSafeInteger(taskId) || taskId <= 0) {
+      response.status(400).json({ error: 'Mã công việc không hợp lệ.' });
+      return;
+    }
+    try {
+      const result = await database.query(
+        `UPDATE care_tasks SET status='done',completed_at=now()
+         WHERE id=$1 AND is_demo=true AND status='open'
+         RETURNING id,status,completed_at`, [taskId],
+      );
+      if (!result.rowCount) {
+        response.status(409).json({ error: 'Công việc không tồn tại trong dữ liệu demo hoặc đã được xử lý.' });
+        return;
+      }
+      response.json({ data: result.rows[0] });
+    } catch {
+      response.status(500).json({ error: 'Không thể cập nhật trạng thái công việc demo.' });
+    }
+  });
+
+  app.get('/api/demo/:resource', async (request, response) => {
+    const sql = demoQueries[request.params.resource];
+    if (!sql) {
+      response.status(404).json({ error: 'Không tìm thấy nhóm dữ liệu demo.' });
+      return;
+    }
+    try {
+      const result = await database.query(sql);
+      response.json({ data: result.rows, total: result.rowCount });
+    } catch {
+      response.status(500).json({ error: 'Không thể đọc dữ liệu demo. Hãy chạy migrations và seed:demo.' });
+    }
+  });
+
   return app;
 }

@@ -1,5 +1,9 @@
 import { Pool } from 'pg';
-import { config } from '../config.js';
+import { env } from '../config/env.js';
 
-export const pool = new Pool(config.database);
-pool.on('error', () => console.error('Unexpected PostgreSQL pool error'));
+export const pool = new Pool(env.database);
+
+// Report unexpected disconnects without printing connection settings.
+pool.on('error', () => {
+  console.error('Unexpected PostgreSQL pool error');
+});

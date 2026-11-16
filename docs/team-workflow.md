@@ -26,4 +26,4 @@ For a small team, people can rotate roles. Avoid assigning only one person all d
 
 ## Classroom data
 
-Use fabricated names and addresses such as `student01@example.com`. Do not copy company customer data, screenshots, internal documents, API payloads, tokens, or source histories into this repository. Check school and company rules before publishing the repository publicly.
+Use fabricated names and addresses such as `student01@example.com`. The shared lead fixture is fully synthetic. Do not copy company customer data, derived labels, workbook metrics, screenshots, internal documents, API payloads, tokens, or source histories into this repository. Keep company work and course work in separate repositories and review `git status` before committing. Check school and company rules before publishing the repository publicly.

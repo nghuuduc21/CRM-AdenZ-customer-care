@@ -1,6 +1,6 @@
-# Team Project Starter
+# Customer Care Team Demo
 
-A small, generic starter for a school team project. It includes an Express API written in TypeScript, PostgreSQL, Docker Compose, ordered migrations, and a sample CRUD resource. The starter has no company data, company branding, external API credentials, or preselected business domain.
+A PostgreSQL-backed customer-care learning project. Its navigation, customer profiles, campaign flow, care journeys, dashboard, scoring screens, and settings follow the Care application layout. The repository contains a synthetic demo seeder and has no company database, credentials, API tokens, internal planning documents, or live email delivery.
 
 ## Requirements
 
@@ -15,30 +15,31 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Change `POSTGRES_PASSWORD` in `.env` to a local password, then run:
+Set a private local value for `POSTGRES_PASSWORD` and save the file. Keep `.env` local. Then run:
 
 ```powershell
 docker compose up -d
 npm install
 npm run migrate
+npm run seed:demo
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000/health` to check the database connection. The sample API is under `/api/records`:
+Open `http://127.0.0.1:3000`. On first use, create the local administrator account from the login page. Check the database at `http://127.0.0.1:3000/health`.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:3000/api/records
-Invoke-RestMethod http://127.0.0.1:3000/api/records -Method Post -ContentType 'application/json' -Body '{"title":"First team idea","description":"Replace with your own project data."}'
-```
+The demo seeder generates fictional customers, products, orders, leads, activities, and campaign history. Re-running `npm run seed:demo` replaces only rows marked as demo. Campaign and journey actions are simulations; the app does not send real email or connect to an external CRM.
 
-## Make it your group's project
+## Project structure
 
-1. Agree on a problem your group wants to solve. You may keep, replace, or remove the sample `records` resource.
-2. Sketch the screens and user flow before choosing extra packages.
-3. Rename the app and database, then choose your own colors, layout, entities, roles, and features.
-4. Keep business logic in focused modules, validate input at API boundaries, and add a migration when the schema changes.
-5. Use synthetic data. Never put real customer/student information, API tokens, passwords, or private company material in the repository.
-6. Each teammate works on a branch; review changes before merging to the shared branch.
+- `src/modules/` contains the auth, customer, campaign, journey, dashboard, scoring, settings, catalog, and care-task modules.
+- `src/db/` contains PostgreSQL connection and migration runner.
+- `migrations/` contains ordered SQL migrations.
+- `public/` contains the web interface.
+- `src/scripts/demo-seed.service.ts` builds the synthetic dataset; `src/scripts/seed-demo.ts` is its command-line entry point.
+
+## Team workflow
+
+Each teammate should use a feature branch and a separate local `.env`/database. Use fabricated information only. Before committing, inspect `git status --short` and make sure `.env`, workbooks, database dumps, screenshots with customer data, and other private company material are not staged. See [team-workflow.md](docs/team-workflow.md).
 
 ## Useful commands
 
@@ -49,4 +50,4 @@ npm start
 docker compose down
 ```
 
-`docker compose down` stops the local database but keeps its volume. To remove the local database volume, use `docker compose down -v`; that permanently deletes this starter's local database data.
+`docker compose down` stops PostgreSQL and keeps its data volume. `docker compose down -v` permanently deletes this local demo database.
