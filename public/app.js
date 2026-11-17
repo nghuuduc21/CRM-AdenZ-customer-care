@@ -15,6 +15,26 @@ const ROLE = { admin: 'Quản trị', boss: 'Sếp', marketing: 'Marketing', sal
 const PRIO = { urgent: 'Gấp', today: 'Hôm nay', later: 'Khi rảnh' };
 
 const S = { user: null, needsSetup: false, tab: lsGet('tab') || 'today', status: null };
+function themeIsDark() { return document.documentElement.dataset.theme === 'dark'; }
+function updateThemeButton() {
+  const button = $('#theme-toggle');
+  if (!button) return;
+  const dark = themeIsDark();
+  button.textContent = dark ? '☀️' : '🌙';
+  button.setAttribute('aria-pressed', String(dark));
+  button.title = dark ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối';
+}
+function toggleTheme() {
+  const dark = !themeIsDark();
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  lsSet('theme', dark ? 'dark' : 'light');
+  updateThemeButton();
+}
+function addThemeToggle() {
+  const button = $('#theme-toggle');
+  if (button) button.onclick = toggleTheme;
+  updateThemeButton();
+}
 function lsGet(k) {
   try {
     return localStorage.getItem('care.' + k);
@@ -68,6 +88,12 @@ function authView() {
 <label class="f"><span>Tên đăng nhập</span><input type="text" name="username" autocomplete="username" required></label>
 <label class="f"><span>Mật khẩu</span><input type="password" name="password" autocomplete="${setup ? 'new-password' : 'current-password'}" required></label>
 <div class="actions"><button class="primary">${setup ? 'Tạo tài khoản' : 'Đăng nhập'}</button><span class="msg err" id="e"></span></div></form></div></div>`;
+  const authThemeButton = document.createElement('button');
+  authThemeButton.id = 'theme-toggle';
+  authThemeButton.className = 'theme-toggle';
+  authThemeButton.textContent = '🌙 Chế độ tối';
+  $('.auth').prepend(authThemeButton);
+  addThemeToggle();
   $('#f').onsubmit = async (ev) => {
     ev.preventDefault();
     try {
@@ -109,6 +135,12 @@ async function render() {
   if (!TABS.some(([k]) => k === S.tab) && !(HIDDEN_TABS.includes(S.tab) && S.user.role !== 'sale')) S.tab = TABS[0][0];
   $('#app').innerHTML = `<header class="top"><span class="brand"><img src="logo.png" alt="AdenZ Travel"><span class="care">AdenZ Travel</span>${S.status.demo ? '<span class="pill ok">DEMO</span>' : ''}</span><span class="who">${esc(S.user.name)} · ${esc(ROLE[S.user.role] || S.user.role)}</span><button id="out">Đăng xuất</button></header>
 <div class="layout"><nav class="side">${TABS.map(([k, v]) => `<button data-tab="${k}" class="${k === S.tab ? 'active' : ''}">${v}</button>`).join('')}</nav><main id="main"><p class="loading">Đang tải…</p></main></div>`;
+  const themeButton = document.createElement('button');
+  themeButton.id = 'theme-toggle';
+  themeButton.className = 'theme-toggle';
+  themeButton.textContent = '🌙 Chế độ tối';
+  $('#out').before(themeButton);
+  addThemeToggle();
   $('#out').onclick = async () => {
     await api('POST', '/api/logout');
     S.user = null;
