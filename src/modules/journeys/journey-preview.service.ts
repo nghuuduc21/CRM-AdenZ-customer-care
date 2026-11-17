@@ -32,7 +32,7 @@ const DATE_RULES: Partial<Record<JourneyKey,string>> = {
 export function createJourneyPreviewService(pool: Pool) {
   return {
     async preview(settings: Settings, now = new Date(), simulatedDate?: string) {
-      const demo = settings.tourwell.useSample;
+      const demo = false;
       const vnNow = new Date(now.getTime() + 7 * 60 * 60_000);
       const today = simulatedDate || vnNow.toISOString().slice(0,10);
       const runTime=settings.schedule.journeyTime||'09:00';

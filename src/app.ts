@@ -14,7 +14,6 @@ import { createCatalogRouter } from './modules/catalog/catalog.routes.js';
 import { createJourneyRouter } from './modules/journeys/journey.routes.js';
 import { createCampaignRouter } from './modules/campaigns/campaign.routes.js';
 import { createScoringRouter } from './modules/scoring/scoring.routes.js';
-import { seedDemo } from './scripts/demo-seed.service.js';
 
 const runFile = promisify(execFile);
 
@@ -55,7 +54,6 @@ export async function createApp(database: Pool): Promise<Express> {
         response.status(500).json({ error: 'Không tìm thấy data/source/customers.xlsx để nạp lại dữ liệu demo.' });
         return;
       }
-      const counts = await seedDemo();
       const compiledImportScript = resolve(process.cwd(), 'dist/scripts/import-customers.js');
       const importScript = existsSync(compiledImportScript)
         ? compiledImportScript
@@ -63,13 +61,16 @@ export async function createApp(database: Pool): Promise<Express> {
       const commandArgs = importScript.endsWith('.ts')
         ? [resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs'), importScript, xlsxPath]
         : [importScript, xlsxPath];
-      await runFile(process.execPath, commandArgs, {
+      const result = await runFile(process.execPath, commandArgs, {
         cwd: process.cwd(),
         maxBuffer: 10 * 1024 * 1024,
       });
-      response.json({ counts, simulated: true, reloadedFromXlsx: true, note: 'Đã nạp lại demo mặc định và dữ liệu customers.xlsx.' });
-    } catch {
-      response.status(500).json({ error: 'Không thể nạp lại dữ liệu demo.' });
+      const output = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
+      const counts = output ? JSON.parse(output) : {};
+      response.json({ ...counts, counts, importedFromXlsx: true, note: 'Đã import dữ liệu thật từ data/source/customers.xlsx.' });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Lỗi không xác định.';
+      response.status(500).json({ error: `Không thể import customers.xlsx: ${detail}` });
     }
   });
 
@@ -130,7 +131,7 @@ export async function createApp(database: Pool): Promise<Express> {
         open_tasks: openTasks.rows[0]?.count ?? 0,
       } });
     } catch {
-      response.status(500).json({ error: 'Không thể đọc thống kê demo. Hãy chạy migrations và seed:demo.' });
+      response.status(500).json({ error: 'Không thể đọc thống kê dữ liệu. Hãy chạy migrations và import customers.xlsx.' });
     }
   });
 
@@ -199,7 +200,7 @@ export async function createApp(database: Pool): Promise<Express> {
       const result = await database.query(sql);
       response.json({ data: result.rows, total: result.rowCount });
     } catch {
-      response.status(500).json({ error: 'Không thể đọc dữ liệu demo. Hãy chạy migrations và seed:demo.' });
+      response.status(500).json({ error: 'Không thể đọc dữ liệu. Hãy chạy migrations và import customers.xlsx.' });
     }
   });
 

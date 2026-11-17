@@ -12,9 +12,7 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
-    "seed:demo": "tsx src/scripts/seed-demo.ts",
-    "seed:snapshot": "tsx src/scripts/import-customers.ts data/source/customers.xlsx",
-    "seed:all": "npm run seed:demo && npm run seed:snapshot"
+    "import:customers": "tsx src/scripts/import-customers.ts data/source/customers.xlsx"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

@@ -26,7 +26,7 @@ export function createCampaignRepository(pool: Pool) {
     if (audience.leadSources?.length) add(`EXISTS(SELECT 1 FROM leads l WHERE l.customer_id=c.customer_id AND l.source_name=ANY(?::text[]))`, audience.leadSources);
     if (audience.services?.length) add(`EXISTS(SELECT 1 FROM order_services os JOIN orders o ON o.id=os.order_id WHERE o.customer_id=c.customer_id AND os.service_type=ANY(?::text[]))`, audience.services);
     if (audience.notServices?.length) add(`NOT EXISTS(SELECT 1 FROM order_services os JOIN orders o ON o.id=os.order_id WHERE o.customer_id=c.customer_id AND os.service_type=ANY(?::text[]))`, audience.notServices);
-    clauses.push(`c.is_demo=true`);
+    clauses.push(`c.is_demo=false`);
     if (!includeNoEmail) clauses.push(`c.email_primary IS NOT NULL AND btrim(c.email_primary)<>''`);
     return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
   };
@@ -53,11 +53,11 @@ export function createCampaignRepository(pool: Pool) {
   };
   return {
     async list() {
-      const result = await pool.query('SELECT id,name,goal,status,created_by,created_at,approved_by,approved_at,sent_at,scheduled_at FROM campaigns WHERE is_demo=true ORDER BY id DESC LIMIT 500');
+      const result = await pool.query('SELECT id,name,goal,status,created_by,created_at,approved_by,approved_at,sent_at,scheduled_at FROM campaigns WHERE is_demo=false ORDER BY id DESC LIMIT 500');
       return Promise.all(result.rows.map(async (campaign) => ({ ...campaign, report: await report(Number(campaign.id)) })));
     },
     async get(id: number) {
-      const result = await pool.query('SELECT * FROM campaigns WHERE id=$1 AND is_demo=true', [id]);
+      const result = await pool.query('SELECT * FROM campaigns WHERE id=$1 AND is_demo=false', [id]);
       if (!result.rows[0]) return null;
       const campaign = result.rows[0], audience = await recipients(campaign.audience || {});
       const excluded = audience.filter((row) => row.opted_out || row.recent_marketing).map((row) => ({ name: row.name, reason: row.opted_out ? 'Đã từ chối nhận email' : 'Đã nhận tin quảng cáo trong 7 ngày qua' }));
@@ -71,7 +71,7 @@ export function createCampaignRepository(pool: Pool) {
       const validDate = input.scheduledAt ? new Date(input.scheduledAt) : null;
       if (validDate && !Number.isFinite(validDate.getTime())) throw new Error('Thời gian hẹn gửi không hợp lệ.');
       if (id) {
-        const existing = await pool.query('SELECT status FROM campaigns WHERE id=$1 AND is_demo=true', [id]);
+        const existing = await pool.query('SELECT status FROM campaigns WHERE id=$1 AND is_demo=false', [id]);
         if (!existing.rows[0]) throw new Error('Không tìm thấy chiến dịch.');
         if (!['draft','approved'].includes(existing.rows[0].status)) throw new Error('Chiến dịch đã bắt đầu hoặc đã dừng, không thể sửa.');
         await pool.query(`UPDATE campaigns SET name=$2,goal=$3,audience=$4::jsonb,subject=$5,body=$6,product_ids=$7::jsonb,service_ids=$8::jsonb,
@@ -80,7 +80,7 @@ export function createCampaignRepository(pool: Pool) {
         return id;
       }
       const result = await pool.query(`INSERT INTO campaigns(name,goal,audience,channel,subject,body,product_ids,service_ids,recommend,status,created_by,scheduled_at,is_demo)
-        VALUES($1,$2,$3::jsonb,'email',$4,$5,$6::jsonb,$7::jsonb,$8,'draft',$9,$10,true) RETURNING id`,
+        VALUES($1,$2,$3::jsonb,'email',$4,$5,$6::jsonb,$7::jsonb,$8,'draft',$9,$10,false) RETURNING id`,
       [name,String(input.goal||'').slice(0,1000),JSON.stringify(audience),subject,body,JSON.stringify(numbers(input.productIds)),JSON.stringify(strings(input.serviceIds)),input.recommend===true,actor,validDate]);
       return Number(result.rows[0].id);
     },

@@ -85,7 +85,7 @@ export const DEFAULT_TEMPLATES: Partial<Record<JourneyKey, { subject: string; bo
 export const DEFAULTS = {
   smtp: { host: '', port: 465, secure: true, user: '', passEnc: '', from: '' },
   testTo: '',
-  tourwell: { url: '', tokenEnc: '', useSample: true },
+  tourwell: { url: '', tokenEnc: '', useSample: false },
   publicUrl: 'http://localhost:3030', // địa chỉ công khai cho link hủy nhận tin, đo mở/bấm
   sending: {
     perMinute: 20, // tốc độ gửi (hosting thường giới hạn số email/giờ)

@@ -9,11 +9,11 @@ export function createDashboardRepository(pool: Pool) {
     async status(user: unknown) {
       const [queue, lastSync] = await Promise.all([
         pool.query(`SELECT count(*) FILTER(WHERE status='queued')::int AS queued,
-          count(*) FILTER(WHERE status='sent')::int AS sent,count(*) FILTER(WHERE status='failed')::int AS failed FROM messages WHERE is_demo=true`),
+          count(*) FILTER(WHERE status='sent')::int AS sent,count(*) FILTER(WHERE status='failed')::int AS failed FROM messages WHERE is_demo=false`),
         pool.query(`SELECT occurred_at,detail FROM care_audit WHERE action='sync' ORDER BY id DESC LIMIT 1`),
       ]);
       return {
-        demo: true,
+        demo: false,
         sample: false,
         smtpReady: false,
         testTo: '',
@@ -39,18 +39,18 @@ export function createDashboardRepository(pool: Pool) {
           COALESCE(sum(s.total_spend),0)::numeric AS spend FROM customers c
           LEFT JOIN customer_insights i ON i.customer_id=c.customer_id
           LEFT JOIN care_scores s ON s.customer_id=c.customer_id
-          WHERE c.is_demo=true AND (i.customer_kind IS NOT NULL OR s.kind IN ('buyer','lead')) GROUP BY 1 ORDER BY 1`),
+          WHERE c.is_demo=false AND (i.customer_kind IS NOT NULL OR s.kind IN ('buyer','lead')) GROUP BY 1 ORDER BY 1`),
         pool.query(`SELECT count(*) FILTER(WHERE customer_kind='buyer')::int AS buyers,
           count(*) FILTER(WHERE customer_kind='prospect')::int AS leads,
           count(*) FILTER(WHERE potential_tier='hot')::int AS hot,
           count(*) FILTER(WHERE customer_kind='buyer' AND churn_risk='high')::int AS churn,
-          count(*) FILTER(WHERE predicted_purchase='high')::int AS likely FROM customer_insights WHERE is_demo=true`),
+          count(*) FILTER(WHERE predicted_purchase='high')::int AS likely FROM customer_insights WHERE is_demo=false`),
         pool.query(`SELECT count(DISTINCT customer_id)::int AS n FROM (
-          SELECT o.customer_id FROM care_opt_outs o JOIN customers c USING(customer_id) WHERE o.channel='email' AND c.is_demo=true
-          UNION SELECT p.customer_id FROM customer_contact_preferences p JOIN customers c USING(customer_id) WHERE p.email_marketing_allowed=false AND c.is_demo=true
+          SELECT o.customer_id FROM care_opt_outs o JOIN customers c USING(customer_id) WHERE o.channel='email' AND c.is_demo=false
+          UNION SELECT p.customer_id FROM customer_contact_preferences p JOIN customers c USING(customer_id) WHERE p.email_marketing_allowed=false AND c.is_demo=false
         ) opted`),
-        pool.query("SELECT count(*)::int AS n FROM care_tasks WHERE status='open' AND is_demo=true"),
-        pool.query("SELECT count(*)::int AS n FROM customer_insights WHERE customer_kind='buyer' AND f_score >= 3 AND is_demo=true"),
+        pool.query("SELECT count(*)::int AS n FROM care_tasks WHERE status='open' AND is_demo=false"),
+        pool.query("SELECT count(*)::int AS n FROM customer_insights WHERE customer_kind='buyer' AND f_score >= 3 AND is_demo=false"),
         customers.list({ segment: 'hot' }, 8),
         customers.list({ propensity: 'high' }, 8),
         customers.list({ segment: 'at_risk' }, 20),
@@ -64,7 +64,7 @@ export function createDashboardRepository(pool: Pool) {
           count(m.id) FILTER(WHERE m.status='unsubscribed')::int AS unsubscribed,
           NULL::int AS buyers,NULL::numeric AS revenue
           FROM campaigns c LEFT JOIN messages m ON m.campaign_id=c.id
-          WHERE c.is_demo=true
+          WHERE c.is_demo=false
           GROUP BY c.id ORDER BY c.id DESC LIMIT 5`),
       ]);
       return {

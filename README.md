@@ -21,13 +21,13 @@ Set a private local value for `POSTGRES_PASSWORD` and save the file. Keep `.env`
 docker compose up -d
 npm install
 npm run migrate
-npm run seed:demo
+npm run import:customers
 npm run dev
 ```
 
 Open `http://127.0.0.1:3000`. On first use, create the local administrator account from the login page. Check the database at `http://127.0.0.1:3000/health`.
 
-The demo seeder generates fictional customers, products, orders, leads, activities, and campaign history. Re-running `npm run seed:demo` replaces only rows marked as demo. Campaign and journey actions are simulations; the app does not send real email or connect to an external CRM.
+The application imports customer, product, order, lead, activity and passenger data directly from `data/source/customers.xlsx`. Re-running `npm run import:customers` upserts the workbook rows and recalculates customer scores. Campaign and journey actions remain disabled until the operational email settings are configured.
 
 ## Project structure
 
@@ -35,7 +35,7 @@ The demo seeder generates fictional customers, products, orders, leads, activiti
 - `src/db/` contains PostgreSQL connection and migration runner.
 - `migrations/` contains ordered SQL migrations.
 - `public/` contains the web interface.
-- `src/scripts/demo-seed.service.ts` builds the synthetic dataset; `src/scripts/seed-demo.ts` is its command-line entry point.
+- `src/scripts/import-customers.ts` imports the workbook into PostgreSQL.
 
 ## Team workflow
 

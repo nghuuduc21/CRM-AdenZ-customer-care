@@ -29,7 +29,7 @@ const customerListSql = `
     COALESCE(i.score_reasons,cs.reasons,'[]'::jsonb) AS reasons,
     COALESCE(cs.visited,'[]'::jsonb) AS visited,
     COALESCE(i.predicted_purchase_score,0) AS purchase_score,
-    COALESCE((SELECT sum(o.total_amount) FROM orders o WHERE o.customer_id=c.customer_id AND o.is_demo=true AND o.status_title IN ('Thành công','Hoàn tất')),cs.total_spend,0) AS total_spend,
+    COALESCE((SELECT sum(o.total_amount) FROM orders o WHERE o.customer_id=c.customer_id AND o.is_demo=false AND o.status_title IN ('Thành công','Hoàn tất')),cs.total_spend,0) AS total_spend,
     EXISTS(SELECT 1 FROM care_opt_outs oo WHERE oo.customer_id=c.customer_id AND oo.channel='email')
       OR EXISTS(SELECT 1 FROM customer_contact_preferences cp WHERE cp.customer_id=c.customer_id AND cp.email_marketing_allowed=false) AS opted_out
   FROM customers c
@@ -68,7 +68,7 @@ export function createCustomerRepository(pool: Pool) {
       }
       if (filters.tier) { values.push(filters.tier); where.push(`COALESCE(c.member_tier,c.tier)=$${values.length}`); }
       if (filters.partner) where.push('(c.is_b2b OR c.sub_group ILIKE \'%đại lý%\' OR c.sub_group ILIKE \'%doanh nghiệp%\')');
-      where.unshift('c.is_demo=true');
+      where.unshift('c.is_demo=false');
       values.push(limit);
       const sql = `${customerListSql}${where.length ? ` WHERE ${where.join(' AND ')}` : ''}
         ORDER BY CASE i.customer_kind WHEN 'buyer' THEN 0 WHEN 'prospect' THEN 1 ELSE 2 END,
@@ -78,20 +78,20 @@ export function createCustomerRepository(pool: Pool) {
     },
 
     async getById(id: number) {
-      const result = await pool.query(`${customerListSql} WHERE c.is_demo=true AND c.customer_id=$1 LIMIT 1`, [id]);
+      const result = await pool.query(`${customerListSql} WHERE c.is_demo=false AND c.customer_id=$1 LIMIT 1`, [id]);
       return result.rows[0] ?? null;
     },
 
     async profile(id: number) {
-      const customer = await pool.query('SELECT * FROM customers WHERE is_demo=true AND customer_id=$1 LIMIT 1', [id]);
+      const customer = await pool.query('SELECT * FROM customers WHERE is_demo=false AND customer_id=$1 LIMIT 1', [id]);
       if (!customer.rows[0]) return null;
       const [score, orders, leads, messages, history, optOut, surveys, tasks, leadOutcomes, receipts] = await Promise.all([
         pool.query('SELECT * FROM care_scores WHERE customer_id=$1', [id]),
         pool.query(`SELECT o.*,o.total_amount AS total,o.paid_amount AS paid,o.remaining_amount AS remaining
-          FROM orders o WHERE o.customer_id=$1 AND o.is_demo=true ORDER BY o.departure DESC NULLS LAST,o.order_at DESC`, [id]),
-        pool.query('SELECT *,customer_source->>\'code\' AS source_customer_code,state_title AS source_state_title,quotes_source AS source_quotes,sales_person_source AS source_sales_person FROM leads WHERE customer_id=$1 AND is_demo=true ORDER BY created_at DESC', [id]),
+          FROM orders o WHERE o.customer_id=$1 AND o.is_demo=false ORDER BY o.departure DESC NULLS LAST,o.order_at DESC`, [id]),
+        pool.query('SELECT *,customer_source->>\'code\' AS source_customer_code,state_title AS source_state_title,quotes_source AS source_quotes,sales_person_source AS source_sales_person FROM leads WHERE customer_id=$1 AND is_demo=false ORDER BY created_at DESC', [id]),
         pool.query(`SELECT id,campaign_id,journey,subject,status,reason,created_at,sent_at,opened_at,clicked_at
-          FROM messages WHERE customer_id=$1 AND is_demo=true ORDER BY id DESC LIMIT 50`, [id]),
+          FROM messages WHERE customer_id=$1 AND is_demo=false ORDER BY id DESC LIMIT 50`, [id]),
         pool.query(`SELECT changed_at AS at,from_segment,to_segment FROM care_segment_history WHERE customer_id=$1 ORDER BY changed_at DESC`, [id]),
         pool.query(`SELECT channel,opted_out_at AS at,source FROM care_opt_outs WHERE customer_id=$1
           UNION ALL SELECT 'email' AS channel,unsubscribed_at AS at,'consent preference' AS source
@@ -99,12 +99,12 @@ export function createCustomerRepository(pool: Pool) {
         pool.query(`SELECT s.score,s.comment,s.sent_at,s.answered_at,o.code,o.trip_name FROM surveys s
           LEFT JOIN orders o ON o.id=s.order_id WHERE s.customer_id=$1 ORDER BY s.sent_at DESC`, [id]),
         pool.query(`SELECT id,kind,task_kind,title,status,outcome,done_by,done_at,created_at,step
-          FROM care_tasks WHERE customer_id=$1 AND is_demo=true ORDER BY id DESC LIMIT 30`, [id]),
+          FROM care_tasks WHERE customer_id=$1 AND is_demo=false ORDER BY id DESC LIMIT 30`, [id]),
         pool.query('SELECT * FROM care_lead_outcomes WHERE customer_id=$1 ORDER BY recorded_at DESC', [id]),
-        pool.query('SELECT r.id,r.code,r.transaction_type,r.total_amount_source,r.payment_date,r.approve_status,r.payment_method,r.order_id FROM receipts r WHERE r.customer_id=$1 AND r.is_demo=true ORDER BY r.payment_date DESC NULLS LAST', [id]),
+        pool.query('SELECT r.id,r.code,r.transaction_type,r.total_amount_source,r.payment_date,r.approve_status,r.payment_method,r.order_id FROM receipts r WHERE r.customer_id=$1 AND r.is_demo=false ORDER BY r.payment_date DESC NULLS LAST', [id]),
       ]);
       const scoreRow = score.rows[0] ?? null;
-      const insights = await pool.query('SELECT * FROM customer_insights WHERE customer_id=$1 AND is_demo=true', [id]);
+        const insights = await pool.query('SELECT * FROM customer_insights WHERE customer_id=$1 AND is_demo=false', [id]);
       const insight = insights.rows[0] ?? null;
       return {
         customer: {
@@ -137,21 +137,21 @@ export function createCustomerRepository(pool: Pool) {
     },
 
     async destinations() {
-      const result = await pool.query(`SELECT DISTINCT destination FROM orders WHERE is_demo=true AND destination IS NOT NULL AND destination<>'Khác'
-        UNION SELECT DISTINCT destination FROM products WHERE is_demo=true AND destination IS NOT NULL AND destination<>'Khác'
+      const result = await pool.query(`SELECT DISTINCT destination FROM orders WHERE is_demo=false AND destination IS NOT NULL AND destination<>'Khác'
+        UNION SELECT DISTINCT destination FROM products WHERE is_demo=false AND destination IS NOT NULL AND destination<>'Khác'
         ORDER BY destination`);
       return result.rows.map((row) => row.destination as string);
     },
 
     async services() {
-      return pool.query<{ service_type: string }>(`SELECT DISTINCT service_type FROM order_services WHERE is_demo=true AND service_type IS NOT NULL ORDER BY service_type`);
+      return pool.query<{ service_type: string }>(`SELECT DISTINCT service_type FROM order_services WHERE is_demo=false AND service_type IS NOT NULL ORDER BY service_type`);
     },
 
     async setEmailOptOut(id: number, optedOut: boolean, actor: string) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const customer = await client.query('SELECT 1 FROM customers WHERE customer_id=$1 AND is_demo=true FOR UPDATE', [id]);
+        const customer = await client.query('SELECT 1 FROM customers WHERE customer_id=$1 AND is_demo=false FOR UPDATE', [id]);
         if (!customer.rowCount) throw Object.assign(new Error('Không tìm thấy khách hàng.'), { status: 404 });
         if (optedOut) {
           await client.query(`INSERT INTO care_opt_outs(customer_id,channel,source) VALUES($1,'email',$2)
