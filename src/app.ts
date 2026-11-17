@@ -1,6 +1,9 @@
 import express, { type Express } from 'express';
 import type { Pool } from 'pg';
 import { resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { createAuthRouter, createUsersRouter, requireCareUser } from './modules/auth/auth.routes.js';
 import { loadApplicationKey } from './shared/security/key-store.js';
 import { createCustomerRouter } from './modules/customers/customer.routes.js';
@@ -12,6 +15,8 @@ import { createJourneyRouter } from './modules/journeys/journey.routes.js';
 import { createCampaignRouter } from './modules/campaigns/campaign.routes.js';
 import { createScoringRouter } from './modules/scoring/scoring.routes.js';
 import { seedDemo } from './scripts/demo-seed.service.js';
+
+const runFile = promisify(execFile);
 
 export async function createApp(database: Pool): Promise<Express> {
   const app = express();
@@ -45,8 +50,24 @@ export async function createApp(database: Pool): Promise<Express> {
       return;
     }
     try {
+      const xlsxPath = resolve(process.cwd(), 'data/source/customers.xlsx');
+      if (!existsSync(xlsxPath)) {
+        response.status(500).json({ error: 'Không tìm thấy data/source/customers.xlsx để nạp lại dữ liệu demo.' });
+        return;
+      }
       const counts = await seedDemo();
-      response.json({ counts, simulated: true, note: 'Đã nạp lại dữ liệu tổng hợp. Không kết nối CRM bên ngoài.' });
+      const compiledImportScript = resolve(process.cwd(), 'dist/scripts/import-customers.js');
+      const importScript = existsSync(compiledImportScript)
+        ? compiledImportScript
+        : resolve(process.cwd(), 'src/scripts/import-customers.ts');
+      const commandArgs = importScript.endsWith('.ts')
+        ? [resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs'), importScript, xlsxPath]
+        : [importScript, xlsxPath];
+      await runFile(process.execPath, commandArgs, {
+        cwd: process.cwd(),
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      response.json({ counts, simulated: true, reloadedFromXlsx: true, note: 'Đã nạp lại demo mặc định và dữ liệu customers.xlsx.' });
     } catch {
       response.status(500).json({ error: 'Không thể nạp lại dữ liệu demo.' });
     }

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
+import { resolve } from 'node:path';
 import { createScoringService } from '../modules/scoring/scoring.service.js';
 import { createSettingsService } from '../modules/settings/settings.service.js';
 
@@ -66,7 +67,7 @@ function num(value: Cell): number | null { const n = Number(value); return value
 function text(value: Cell): string | null { return value == null || value === '' ? null : String(value); }
 function json(value: unknown): string { return JSON.stringify(value ?? []); }
 
-const xlsxPath = process.argv[2] ?? 'customers.xlsx';
+const xlsxPath = process.argv[2] ?? resolve(process.cwd(), 'data/source/customers.xlsx');
 const sharedXml = await readEntry(xlsxPath, 'xl/sharedStrings.xml');
 const shared = (sharedXml.match(/<si\b[\s\S]*?<\/si>/g) ?? []).map((si) => [...si.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((m) => xmlDecode(m[1])).join(''));
 const [customers, activities, leads, orders, passengers, products] = await Promise.all([1, 2, 3, 4, 5, 6].map((n) => readSheet(xlsxPath, n, shared)));
@@ -75,6 +76,19 @@ const pool = new Pool({ host: process.env.DB_HOST, port: Number(process.env.DB_P
 const client = await pool.connect();
 try {
   await client.query('BEGIN');
+  const importedCustomers = await client.query<{ customer_id: number }>(
+    "SELECT customer_id FROM customers WHERE demo_key LIKE 'xlsx-customer-%'",
+  );
+  const importedCustomerIds = importedCustomers.rows.map((row) => row.customer_id);
+  if (importedCustomerIds.length) {
+    for (const table of ['messages', 'surveys', 'care_tasks', 'passengers', 'activities', 'leads', 'order_services', 'orders']) {
+      await client.query(`DELETE FROM ${table} WHERE demo_key LIKE 'xlsx-%'`);
+    }
+    await client.query('DELETE FROM customer_insights WHERE customer_id = ANY($1::bigint[])', [importedCustomerIds]);
+    await client.query('DELETE FROM customer_contact_preferences WHERE customer_id = ANY($1::bigint[])', [importedCustomerIds]);
+    await client.query("DELETE FROM products WHERE demo_key LIKE 'xlsx-%'");
+    await client.query("DELETE FROM customers WHERE demo_key LIKE 'xlsx-customer-%'");
+  }
   const customerMap = new Map<number, number>();
   for (const r of customers) {
     const sourceId = num(r.customer_id)!;
