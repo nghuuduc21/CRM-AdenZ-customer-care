@@ -19,9 +19,9 @@ export function createCampaignRouter(pool: Pool) {
     const id=idOf(request.params.id),client=await pool.connect();
     try{
       await client.query('BEGIN');
-      const removed=await client.query("DELETE FROM campaigns c WHERE c.id=$1 AND c.is_demo=true AND c.status IN ('draft','approved') AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.campaign_id=c.id) RETURNING c.id",[id]);
+      const removed=await client.query("DELETE FROM campaigns c WHERE c.id=$1 AND c.is_demo=false AND c.status IN ('draft','approved') AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.campaign_id=c.id) RETURNING c.id",[id]);
       if(!removed.rowCount){
-        const found=await client.query('SELECT status FROM campaigns WHERE id=$1 AND is_demo=true',[id]);
+        const found=await client.query('SELECT status FROM campaigns WHERE id=$1 AND is_demo=false',[id]);
         await client.query('ROLLBACK');
         if(!found.rowCount){response.status(404).json({error:'Không tìm thấy chiến dịch demo.'});return;}
         response.status(409).json({error:'Chỉ xóa được chiến dịch đang soạn/đã duyệt và chưa có lịch sử gửi.'});return;
@@ -51,7 +51,7 @@ export function createCampaignRouter(pool: Pool) {
       const input=request.body||{},rows=await repository.recipients(input.audience||{}),allowed=rows.filter((row)=>!row.opted_out&&!row.recent_marketing);
       const customer=allowed.find((row)=>Number(row.id)===Number(input.customerId))||allowed[0]||{id:null,name:'Quý khách',email:'',segment:null,next_destination:null,sale_name:''},config=await settings.load();
       const productIds=Array.isArray(input.productIds)?input.productIds.map(Number).filter((id:number)=>Number.isSafeInteger(id)&&id>0):[];
-      const products=productIds.length?await pool.query(`SELECT name,type,destination,duration,price,url,market FROM products WHERE id=ANY($1::bigint[]) AND active=true AND is_demo=true ORDER BY name`,[productIds]):{rows:[]};
+      const products=productIds.length?await pool.query(`SELECT name,type,destination,duration,price,url,market FROM products WHERE id=ANY($1::bigint[]) AND active=true AND is_demo=false ORDER BY name`,[productIds]):{rows:[]};
       const serviceIds=Array.isArray(input.serviceIds)?input.serviceIds.map(String):[];
       const services=(config.services||[]).filter((service:any)=>serviceIds.includes(service.id));
       const productCards=products.rows.map((item:any)=>emailCard(
@@ -76,18 +76,18 @@ export function createCampaignRouter(pool: Pool) {
   });
   router.post('/campaigns/:id/approve',async(request,response)=>{
     const user=response.locals.user as CareUser;if(!['admin','boss'].includes(user.role)){response.status(403).json({error:'Chỉ Quản trị hoặc Sếp được duyệt chiến dịch.'});return;}
-    try{const id=idOf(request.params.id),result=await pool.query("UPDATE campaigns SET status='approved',approved_by=$2,approved_at=now() WHERE id=$1 AND status='draft' AND is_demo=true RETURNING id",[id,user.username]);if(!result.rowCount){response.status(409).json({error:'Chỉ chiến dịch demo đang soạn mới được duyệt.'});return;}await audit(pool,user.username,'campaign.approve',{id});response.json({ok:true});}
+    try{const id=idOf(request.params.id),result=await pool.query("UPDATE campaigns SET status='approved',approved_by=$2,approved_at=now() WHERE id=$1 AND status='draft' AND is_demo=false RETURNING id",[id,user.username]);if(!result.rowCount){response.status(409).json({error:'Chỉ chiến dịch đang soạn mới được duyệt.'});return;}await audit(pool,user.username,'campaign.approve',{id});response.json({ok:true});}
     catch(error){response.status(400).json({error:error instanceof Error?error.message:'Không thể duyệt chiến dịch.'});}
   });
   router.post('/campaigns/:id/duplicate',async(request,response)=>{
     const user=response.locals.user as CareUser;if(!canManage(user)){response.status(403).json({error:'Vai trò hiện tại không được nhân bản chiến dịch.'});return;}
-    try{const old=await pool.query('SELECT * FROM campaigns WHERE id=$1 AND is_demo=true',[idOf(request.params.id)]);if(!old.rows[0]){response.status(404).json({error:'Không tìm thấy chiến dịch demo.'});return;}const c=old.rows[0];const result=await pool.query(`INSERT INTO campaigns(name,goal,status,subject,audience,channel,body,product_ids,service_ids,recommend,created_by,is_demo)
-      VALUES($1,$2,'draft',$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING id`,[`${c.name} (bản sao)`,c.goal,c.subject,c.audience,c.channel,c.body,c.product_ids,c.service_ids,c.recommend,user.username]);response.json({id:Number(result.rows[0].id)});}
+    try{const old=await pool.query('SELECT * FROM campaigns WHERE id=$1 AND is_demo=false',[idOf(request.params.id)]);if(!old.rows[0]){response.status(404).json({error:'Không tìm thấy chiến dịch.'});return;}const c=old.rows[0];const result=await pool.query(`INSERT INTO campaigns(name,goal,status,subject,audience,channel,body,product_ids,service_ids,recommend,created_by,is_demo)
+      VALUES($1,$2,'draft',$3,$4,$5,$6,$7,$8,$9,$10,false) RETURNING id`,[`${c.name} (bản sao)`,c.goal,c.subject,c.audience,c.channel,c.body,c.product_ids,c.service_ids,c.recommend,user.username]);response.json({id:Number(result.rows[0].id)});}
     catch(error){response.status(400).json({error:error instanceof Error?error.message:'Không thể nhân bản chiến dịch.'});}
   });
   router.post('/campaigns/:id/cancel',async(request,response)=>{
     const user=response.locals.user as CareUser;if(!canManage(user)){response.status(403).json({error:'Vai trò hiện tại không được dừng chiến dịch.'});return;}
-    const result=await pool.query("UPDATE campaigns SET status='cancelled' WHERE id=$1 AND is_demo=true AND status IN ('approved','sending') RETURNING id",[Number(request.params.id)]);
+    const result=await pool.query("UPDATE campaigns SET status='cancelled' WHERE id=$1 AND is_demo=false AND status IN ('approved','sending') RETURNING id",[Number(request.params.id)]);
     if(!result.rowCount){response.status(409).json({error:'Chiến dịch không ở trạng thái có thể dừng.'});return;}await audit(pool,user.username,'campaign.cancel',{id:Number(request.params.id)});response.json({ok:true});
   });
   router.post('/campaigns/:id/send',async(request,response)=>{
@@ -95,7 +95,7 @@ export function createCampaignRouter(pool: Pool) {
     if(!canManage(user)){response.status(403).json({error:'Vai trò hiện tại không được gửi chiến dịch.'});return;}
     const id=idOf(request.params.id);
     try{
-      const found=await pool.query('SELECT status,audience,subject FROM campaigns WHERE id=$1 AND is_demo=true',[id]);
+      const found=await pool.query('SELECT status,audience,subject FROM campaigns WHERE id=$1 AND is_demo=false',[id]);
       if(!found.rows[0]){response.status(404).json({error:'Không tìm thấy chiến dịch.'});return;}
       if(found.rows[0].status!=='approved'){response.status(409).json({error:'Chiến dịch cần được duyệt trước khi gửi.'});return;}
       const audience=await repository.recipients(found.rows[0].audience||{});
@@ -107,12 +107,12 @@ export function createCampaignRouter(pool: Pool) {
       const config=await settings.load(),client=await pool.connect();
       try{
         await client.query('BEGIN');
-        const locked=await client.query('SELECT status,subject FROM campaigns WHERE id=$1 AND is_demo=true FOR UPDATE',[id]);
+        const locked=await client.query('SELECT status,subject FROM campaigns WHERE id=$1 AND is_demo=false FOR UPDATE',[id]);
         if(locked.rows[0]?.status!=='approved')throw new Error('Chiến dịch đã được gửi hoặc thay đổi trạng thái.');
         for(const customer of recipients){
           const subject=render(String(locked.rows[0].subject||''),customer,config);
           await client.query(`INSERT INTO messages(campaign_id,customer_id,journey,subject,to_addr,marketing,status,created_at,sent_at,is_demo)
-            VALUES($1,$2,'campaign',$3,$4,true,'sent',now(),now(),true)`,[id,customer.id,subject,customer.email]);
+            VALUES($1,$2,'campaign',$3,$4,true,'sent',now(),now(),false)`,[id,customer.id,subject,customer.email]);
         }
         await client.query("UPDATE campaigns SET status='done',sent_at=now() WHERE id=$1",[id]);
         await client.query('INSERT INTO care_audit(actor,action,detail) VALUES($1,\'campaign.simulate\',$2::jsonb)',[user.username,JSON.stringify({id,recipients:recipients.length})]);
